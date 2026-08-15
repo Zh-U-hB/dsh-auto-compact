@@ -12,7 +12,7 @@ function makeSession() {
   return { surface: { nodes: surface }, events }
 }
 
-function makeHarness({ totals, threshold = 262144, compactRegion }) {
+function makeHarness({ totals, threshold = 262144, compactRegion, fallbackCompaction, maxCompactions }) {
   const calls = { compacted: [], infos: [], warns: [] }
   let index = 0
   const measurement = () => {
@@ -40,11 +40,23 @@ function makeHarness({ totals, threshold = 262144, compactRegion }) {
       info: (message) => calls.infos.push(String(message)),
       warn: (message) => calls.warns.push(String(message)),
     },
+    baseUrl: 'file:///test/',
+    loader: {
+      internal: {
+        import: async (specifier) => {
+          calls.imports ??= []
+          calls.imports.push(specifier)
+          return fallbackCompaction === undefined
+            ? {}
+            : { serviceForAgent: () => fallbackCompaction }
+        },
+      },
+    },
     on: (event, handler) => {
       calls.handler = handler
     },
   }
-  apply(ctx, { thresholdTokens: threshold, retainTokens: 5 })
+  apply(ctx, { thresholdTokens: threshold, retainTokens: 5, ...(maxCompactions === undefined ? {} : { maxCompactions }) })
   return { ctx, calls, compaction }
 }
 
@@ -118,4 +130,26 @@ test('apply skips agents whose preset has no compaction backend', async () => {
   // The missing-backend warning is emitted once per agent, not once per step.
   await runStepAgent(harness, agent)
   assert.equal(harness.calls.warns.length, 1)
+})
+
+test('apply resolves preset-isolated compaction through serviceForAgent fallback', async () => {
+  const session = makeSession()
+  let fallbackCalls = 0
+  const fallbackCompaction = {
+    compactRegion: async (start, end) => {
+      fallbackCalls += 1
+      return { shadowedSeqs: [start, end], shadowedTokenCount: 100 }
+    },
+  }
+  const harness = makeHarness({
+    totals: [300000, 100000],
+    threshold: 200000,
+    fallbackCompaction,
+    maxCompactions: 1,
+  })
+  const agent = makeAgent(session, null)
+  await runStepAgent(harness, agent)
+  assert.equal(harness.calls.imports[0], '@deepseek-ai/dsh-agent-presets')
+  assert.equal(fallbackCalls, 1)
+  assert.equal(harness.calls.warns.length, 1) // still-above warning after maxCompactions=1
 })

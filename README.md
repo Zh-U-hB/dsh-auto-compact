@@ -73,7 +73,7 @@ ctx.tokenMeter.measure(agent.session)
         │
         ▼ no
 resolve the agent's own compaction backend:
-        agent.ctx.get('compaction')
+        serviceForAgent(ctx, agent, 'compaction')
         │
         ├── absent ──▶ one warning per agent, skip (preset has no /compact)
         │
@@ -117,7 +117,7 @@ single agent preset:
 
 - It registers one `agent/pre-step` listener process-wide.
 - For every event it asks the *agent itself* for its compaction service
-  (`agent.ctx.get('compaction')`), so the correct per-preset, per-session
+  (`serviceForAgent(ctx, agent, 'compaction')`), so the correct per-preset, per-session
   isolated backend instance is used.
 - Consequently it works for:
   - every agent preset that mounts a compaction backend

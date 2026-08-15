@@ -68,7 +68,7 @@ ctx.tokenMeter.measure(agent.session)
         │
         ▼ 否
 解析该 agent 自己的 compaction 后端：
-        agent.ctx.get('compaction')
+        serviceForAgent(ctx, agent, 'compaction')
         │
         ├── 不存在 ──▶ 每个 agent 只告警一次，跳过（该 preset 没有 /compact）
         │
@@ -108,7 +108,7 @@ ctx.compaction.compactRegion(start, end, agent, signal)
 插件安装在 **host plane（profile bundle）**，而不是某个 agent preset 内部：
 
 - 进程级注册一个 `agent/pre-step` 监听器；
-- 每个事件发生时，通过 `agent.ctx.get('compaction')` 向**该 agent 自己**询问它的
+- 每个事件发生时，通过官方 `serviceForAgent(ctx, agent, 'compaction')` 只读寻址到**该 agent 自己**的
   compaction 服务，因此总是使用正确的、按 preset/会话隔离的后端实例；
 - 因此以下情况全部覆盖：
   - 所有挂载了 compaction 后端的 agent preset（`standard`、`code`、`cordis`、
