@@ -276,6 +276,16 @@ Restart `dsh web` after changing the profile patch.
 
 ## Behavior and semantics
 
+### tokenMeter replay fallback
+
+If the platform's replay-aware `ctx.tokenMeter.measure()` throws for a session
+(for example, a log interrupted across a step boundary is missing a matching
+`step/start`), the plugin temporarily wraps the tokenMeter instance and falls
+back to a surface-only token estimate for compaction decisions. The warning
+`dsh-auto-compact: tokenMeter replay failed (...)` is logged once per session.
+This keeps compaction working on damaged-but-usable sessions; healthy sessions
+never use the fallback.
+
 ### When the check runs
 
 The check runs on the `agent/pre-step` waterfall — immediately before the model

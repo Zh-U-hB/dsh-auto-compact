@@ -263,6 +263,14 @@ DSH_PROFILE=tui ./install.sh        # 或任意其它 profile 名
 
 ## 行为语义
 
+### tokenMeter 重放失败时的降级
+
+如果平台的可重放 `ctx.tokenMeter.measure()` 对某个会话抛错（例如日志在 step
+边界被打断，导致某个 `assistant/message` 缺少对应的 `step/start`），插件会临时
+包装 tokenMeter 实例，改用仅按表面估算的 token 数做压缩决策，并每个会话记录一次
+`dsh-auto-compact: tokenMeter replay failed (...)` 警告。这能让损坏但仍可用的
+会话继续自动压缩；健康会话完全不经过降级路径。
+
 ### 何时检查
 
 检查发生在 `agent/pre-step` 瀑布上——组装该 step 的模型请求之前。由于压缩在
