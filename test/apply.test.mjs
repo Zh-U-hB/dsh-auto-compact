@@ -1,0 +1,94 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { apply } from '../lib/index.js'
+
+function makeSession() {
+  const events = {}
+  const surface = [1, 2, 3, 4]
+  events[1] = { seq: 1, type: 'user/message', data: { message: { content: [{ type: 'text', text: 'start' }] } } }
+  events[2] = { seq: 2, type: 'assistant/message', data: { message: { content: [{ type: 'tool-call' }] } } }
+  events[3] = { seq: 3, type: 'tool/result', data: { message: { content: [{ type: 'tool_result' }] } } }
+  events[4] = { seq: 4, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'done' }] } } }
+  return { surface: { nodes: surface }, events }
+}
+
+function makeHarness({ totals, threshold = 262144, compactRegion }) {
+  const calls = { compacted: [], infos: [], warns: [] }
+  let index = 0
+  const measurement = () => {
+    const total = totals[index] ?? totals[totals.length - 1]
+    return {
+      totalTokens: total,
+      nodes: [
+        { seq: 1, tokens: 10 },
+        { seq: 2, tokens: 10 },
+        { seq: 3, tokens: 10 },
+        { seq: 4, tokens: Math.max(0, total - 30) },
+      ],
+    }
+  }
+  const ctx = {
+    tokenMeter: { measure: (session) => ({ ...measurement(), session }) },
+    logger: {
+      info: (message) => calls.infos.push(String(message)),
+      warn: (message) => calls.warns.push(String(message)),
+    },
+    get: (name) => name === 'compaction' ? {
+      compactRegion: compactRegion ?? (async (start, end, agent) => {
+        calls.compacted.push({ start, end, agent })
+        index += 1
+        return { shadowedSeqs: [start], shadowedTokenCount: 100 }
+      }),
+    } : undefined,
+    on: (event, handler) => {
+      calls.handler = handler
+    },
+  }
+  apply(ctx, { thresholdTokens: threshold, retainTokens: 5 })
+  return { ctx, calls }
+}
+
+async function runStep(harness, session) {
+  let nextCalled = false
+  await harness.calls.handler(
+    {
+      agent: { session },
+      signal: new AbortController().signal,
+    },
+    () => {
+      nextCalled = true
+    },
+  )
+  return nextCalled
+}
+
+test('apply compacts once the absolute threshold is reached', async () => {
+  const session = makeSession()
+  const harness = makeHarness({ totals: [300000, 100000], threshold: 200000 })
+  const nextCalled = await runStep(harness, session)
+  assert.equal(harness.calls.compacted.length, 1)
+  assert.deepEqual(harness.calls.compacted[0].start, 1)
+  assert.equal(nextCalled, true)
+  assert.equal(harness.calls.warns.length, 0)
+})
+
+test('apply does nothing below the threshold', async () => {
+  const session = makeSession()
+  const harness = makeHarness({ totals: [100000], threshold: 200000 })
+  await runStep(harness, session)
+  assert.equal(harness.calls.compacted.length, 0)
+})
+
+test('apply continues the step when compaction throws', async () => {
+  const session = makeSession()
+  const harness = makeHarness({
+    totals: [300000],
+    threshold: 200000,
+    compactRegion: async () => {
+      throw new Error('backend failure')
+    },
+  })
+  const nextCalled = await runStep(harness, session)
+  assert.equal(nextCalled, true)
+  assert.equal(harness.calls.warns.length, 1)
+})

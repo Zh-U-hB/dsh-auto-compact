@@ -20,6 +20,10 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
   },
+  "scripts": {
+    "test": "node --test test/unit.test.mjs test/apply.test.mjs",
+    "check": "node --check lib/index.js && node --check scripts/manage-presets.mjs && npm test"
+  },
   "engines": {
     "node": ">=20"
   },
