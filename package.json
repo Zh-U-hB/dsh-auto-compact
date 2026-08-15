@@ -42,5 +42,13 @@
     "compaction",
     "auto-compact",
     "context"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zh-U-hB/dsh-auto-compact.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Zh-U-hB/dsh-auto-compact/issues"
+  },
+  "homepage": "https://github.com/Zh-U-hB/dsh-auto-compact#readme"
 }
