@@ -1,0 +1,9 @@
+# dsh-auto-compact bundle patch.
+#
+# Mounted on the HOST plane: it observes every agent's pre-step boundary and
+# resolves each agent's own ctx.compaction instance, so one row covers every
+# session and every agent preset. A preset that does not mount a compaction
+# backend is skipped with a single warning per agent.
+- insert:
+    - id: auto-compact
+      name: dsh-auto-compact

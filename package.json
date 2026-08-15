@@ -10,6 +10,7 @@
   },
   "files": [
     "lib/index.js",
+    "cordis.patch.yml",
     "scripts/manage-presets.mjs",
     "README.md",
     "README.zh.md",
@@ -17,6 +18,11 @@
     "uninstall.sh",
     "LICENSE"
   ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
   },

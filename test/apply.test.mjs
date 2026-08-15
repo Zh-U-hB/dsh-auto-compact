@@ -27,32 +27,46 @@ function makeHarness({ totals, threshold = 262144, compactRegion }) {
       ],
     }
   }
+  const compaction = {
+    compactRegion: compactRegion ?? (async (start, end, agent) => {
+      calls.compacted.push({ start, end, agent })
+      index += 1
+      return { shadowedSeqs: [start], shadowedTokenCount: 100 }
+    }),
+  }
   const ctx = {
     tokenMeter: { measure: (session) => ({ ...measurement(), session }) },
     logger: {
       info: (message) => calls.infos.push(String(message)),
       warn: (message) => calls.warns.push(String(message)),
     },
-    get: (name) => name === 'compaction' ? {
-      compactRegion: compactRegion ?? (async (start, end, agent) => {
-        calls.compacted.push({ start, end, agent })
-        index += 1
-        return { shadowedSeqs: [start], shadowedTokenCount: 100 }
-      }),
-    } : undefined,
     on: (event, handler) => {
       calls.handler = handler
     },
   }
   apply(ctx, { thresholdTokens: threshold, retainTokens: 5 })
-  return { ctx, calls }
+  return { ctx, calls, compaction }
 }
 
-async function runStep(harness, session) {
+function makeAgent(session, compaction) {
+  return {
+    id: 'test-agent',
+    session,
+    ctx: {
+      get: (name) => name === 'compaction' ? (compaction ?? undefined) : undefined,
+    },
+  }
+}
+
+async function runStep(harness, session, compaction = harness.compaction) {
+  return runStepAgent(harness, makeAgent(session, compaction))
+}
+
+async function runStepAgent(harness, agent) {
   let nextCalled = false
   await harness.calls.handler(
     {
-      agent: { session },
+      agent,
       signal: new AbortController().signal,
     },
     () => {
@@ -90,5 +104,18 @@ test('apply continues the step when compaction throws', async () => {
   })
   const nextCalled = await runStep(harness, session)
   assert.equal(nextCalled, true)
+  assert.equal(harness.calls.warns.length, 1)
+})
+
+test('apply skips agents whose preset has no compaction backend', async () => {
+  const session = makeSession()
+  const harness = makeHarness({ totals: [300000], threshold: 200000 })
+  const agent = makeAgent(session, null)
+  await runStepAgent(harness, agent)
+  assert.equal(harness.calls.compacted.length, 0)
+  assert.equal(harness.calls.warns.length, 1)
+
+  // The missing-backend warning is emitted once per agent, not once per step.
+  await runStepAgent(harness, agent)
   assert.equal(harness.calls.warns.length, 1)
 })

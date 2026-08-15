@@ -6,108 +6,95 @@ Harness 自带的 compaction 引擎（内置 `/compact` 命令背后的同一个
 
 [English](README.md)
 
+## 为什么它能覆盖所有会话
+
+插件安装在 **host plane（profile bundle）**，不是某个 agent preset 里：
+
+- 它监听整个进程的 `agent/pre-step`，所以对**每个会话**都生效；
+- 每个 agent 通过 `agent.ctx.get('compaction')` 解析**该会话自己的** compaction
+  后端，因此无论会话用哪个 preset（standard / minimal / 本地自定义，以及
+  subagent），只要有 compaction 后端就自动启用；
+- 会话 resume 后同样生效；不要求“新建会话”才带上插件。
+
 ## 功能
 
-- 在每次 `agent/pre-step`（模型调用前）用平台 `ctx.tokenMeter` 测量当前上下文。
+- 每次模型调用前用平台 `ctx.tokenMeter` 测量当前上下文。
 - 达到阈值后自动选择较早的一段历史，通过内置 `ctx.compaction.compactRegion()`
   生成摘要检查点并替换被压缩的历史。
 - 阈值可配置，默认 **262144 tokens（256K）**。
-- 保留最近的尾部历史不压缩，默认保留 **32768 tokens（32K）**。
-- 每次检查最多连续压缩 **3** 次；所有失败只记录日志，不会中断当前会话。
-- 压缩前会按 tool-call/tool-result 配对找到安全切点，不会把未完成的工具调用与
-  其结果拆开。
+- 保留最近 **32768 tokens（32K）** 不压缩；每次检查最多连续压缩 **3** 次。
+- 压缩失败只记录日志，不会中断会话。
+- 自动按 tool-call/tool-result 配对找到安全切点。
 
 ## 环境要求
 
 - DeepSeek Harness `0.1.0-rc.6`
-- 目标 agent preset 中已挂载 `@deepseek-ai/dsh-compaction-basic`（内置
-  `/compact` 的后端；官方 standard/code/cordis preset 以及
-  `minimal-compact`/`anchored-standard` 都已有）
+- `PATH` 中有 `dsh` 和 `pnpm`
+- 会话所用 preset 挂载了 `@deepseek-ai/dsh-compaction-basic`（官方
+  standard/code/cordis 以及 `minimal-compact`/`anchored-standard` 都已挂载；
+  没有 compaction 后端的 preset 会被自动跳过）
 
 ## 安装
-
-Web profile 的 compaction 服务在 **agent preset** 里（不在 profile bundle 中），
-所以本插件安装进本地 preset 的 compaction 组：
 
 ```bash
 cd /path/to/dsh-auto-compact
 ./install.sh
 ```
 
-脚本会扫描 `~/.dsh/.agent-presets`，对所有已包含 `compaction-basic` 的 preset：
+安装脚本会：
 
-1. 把 `lib/index.js` 复制为 `<preset>/dsh-auto-compact.mjs`；
-2. 在 `compaction-basic` 行之后插入：
+1. 清理旧版本遗留在 preset 文件里的行；
+2. 执行 `dsh plugin --profile web add <插件目录>`，把插件加入 web profile
+   的 bundle 列表，并自动追加：
 
 ```yaml
-    - id: auto-compact
-      name: ./dsh-auto-compact.mjs
-      config:
-        thresholdTokens: 262144
-        retainTokens: 32768
-        maxCompactions: 3
-        enabled: true
+- id: auto-compact
+  name: dsh-auto-compact
 ```
 
-只安装指定 preset：
+安装后**重启 `dsh web`**（host-plane bundle 在启动时加载），浏览器硬刷新一次：
 
 ```bash
-./install.sh --preset anchored-standard
-./install.sh --preset anchored-standard --threshold 128k
+dsh web
 ```
 
-安装后，**新建一个会话**（或重启 `dsh web`）即可生效。已经存在的会话会继续使用
-创建时的 preset 版本，不会被热切换。
+之后所有会话、所有 preset 都会经过该阈值检查。
 
 ## 配置
 
-直接编辑 `~/.dsh/.agent-presets/<preset-id>/agent.cordis.yml` 中
-`auto-compact` 行的 `config`：
-
-| 键 | 默认值 | 说明 |
-|---|---|---|
-| `thresholdTokens` | `262144` | 自动压缩阈值；数字或 `128k` / `1m` 形式 |
-| `retainTokens` | `32768` | 压缩时至少保留的最近历史 token 数 |
-| `maxCompactions` | `3` | 一次检查中最多连续压缩次数 |
-| `enabled` | `true` | 设为 `false` 可临时停用，无需卸载 |
-
-例如把阈值改成 128K：
+全局配置写在 `~/.dsh/profiles/web/cordis.patch.yml`，对整个 profile 的所有会话
+生效（默认值不写也可以）：
 
 ```yaml
-    - id: auto-compact
-      name: ./dsh-auto-compact.mjs
-      config:
-        thresholdTokens: 131072
+- id: auto-compact
+  config:
+    thresholdTokens: 262144   # 默认 256K，也可写 128k / 1m
+    retainTokens: 32768       # 至少保留的最近历史
+    maxCompactions: 3         # 一次检查最多连续压缩次数
+    enabled: true             # 临时关闭可设 false
 ```
 
-改完同样需要对**新会话**生效。
+改完重启 `dsh web` 生效。
 
 ## 与内置自动压缩的关系
 
-Harness 内置的 `compaction-basic` 已经有一个按上下文窗口比例（默认 0.8）触发的
-自动压缩。本插件在其之后运行，提供独立于模型窗口比例的**绝对 token 阈值**：
-
-- 内置按比例先触发时，本插件复测后不再重复压缩；
-- 内置阈值高于你设置的绝对阈值时，本插件会先于内置策略触发；
-- 两者调用的是同一个 `ctx.compaction` 服务，锁、持久化、摘要格式完全一致。
+内置 `compaction-basic` 已按上下文窗口比例（默认 0.8）自动压缩。本插件在其
+之外提供**绝对 token 阈值**；两者共用同一个 `ctx.compaction` 服务，锁、
+持久化与摘要格式完全一致，不会互相冲突。
 
 ## 卸载
 
 ```bash
 ./uninstall.sh
-# 或只卸载指定 preset
-./uninstall.sh --preset anchored-standard
 ```
 
-卸载会移除 `agent.cordis.yml` 中的 `auto-compact` 行块并删除
-`dsh-auto-compact.mjs`。新建会话后生效。
+然后重启 `dsh web`。
 
 ## 安全边界
 
-- 只读平台服务：`ctx.tokenMeter`、`ctx.compaction`，不注册任何 HTTP 接口或工具。
-- 所有实际压缩逻辑（范围校验、工具调用配对、摘要生成、日志锁、持久化）都在
-  Harness 内置 compaction 后端中执行。
-- 插件本身无任何运行时 npm 依赖，以本地文件形式挂载在 preset 内。
+- 只读平台服务：`ctx.tokenMeter`、`ctx.compaction`，不注册 HTTP 接口或工具。
+- 实际压缩逻辑全部在 Harness 内置 compaction 后端中执行。
+- 无任何运行时 npm 依赖。
 
 ## License
 
