@@ -41,6 +41,7 @@ test('resolveConfig rejects unknown keys and invalid values', () => {
   assert.throws(() => resolveConfig({ thresholdTokens: 0 }), /positive integer/)
   assert.throws(() => resolveConfig({ thresholdTokens: 'lots' }), /positive integer/)
   assert.throws(() => resolveConfig({ enabled: 'yes' }), /boolean/)
+  assert.throws(() => resolveConfig({ thresholdTokens: 32768, retainTokens: 32768 }), /less than thresholdTokens/)
 })
 
 test('balancedCuts reports cuts around an open tool pair', () => {
