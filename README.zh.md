@@ -135,6 +135,8 @@ ctx.compaction.compactRegion(start, end, agent, signal)
   `auto: false` 的 `compaction-basic` 后备引擎，因此绝对阈值检查在这些
   preset 中同样生效；preset 其余部分仍保持极简（没有 `/compact` 命令、
   没有 pruner、没有内置比例压力）。
+- 空闲/恢复压缩（v0.2.2+）：打开或恢复一个上下文已经超过阈值的会话时，
+  会通过内置 `compactNow` 维护路径立即压缩，不需要再发一条消息。
 - 安装与卸载脚本幂等。
 
 ---
@@ -288,6 +290,11 @@ DSH_PROFILE=tui ./install.sh        # 或任意其它 profile 名
 `dsh-auto-compact: tokenMeter replay failed (...)` 警告。这能让损坏但仍可用的
 会话继续自动压缩；健康会话完全不经过降级路径。
 
+同一个绝对阈值也会在 `agent/created` 且 agent 空闲时检查，因此恢复一个
+早已超阈值的会话时，打开就会压缩。`compactNow` 以 agent maintenance job
+运行（与内置 `/compact` 命令同一条路径）；如果 turn 已经开始，则由
+pre-step 检查处理。
+
 ### 何时检查
 
 检查发生在 `agent/pre-step` 瀑布上——组装该 step 的模型请求之前。由于压缩在
@@ -329,6 +336,8 @@ token 数，但有意与内置压缩后端比较的是同一个数字。
 | 级别 | 消息模式 | 含义 |
 |---|---|---|
 | `info` | `context at N tokens reached the ... threshold` | 开始一次压缩尝试 |
+| `info` | `idle context at N tokens reached the ... threshold` | 空闲/恢复会话无需新消息即压缩 |
+| `info` | `idle compaction shadowed ...` | 一次空闲压缩完成 |
 | `info` | `compacted N history items (~N tokens shadowed)` | 尝试成功 |
 | `warn` | `no tool-pair-balanced older span is compactable` | 超阈值但没有安全区间（按会话限流） |
 | `warn` | `context is still at N tokens after N compaction attempt(s)` | 重试上限耗尽（按会话限流） |

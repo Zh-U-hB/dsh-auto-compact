@@ -12,7 +12,7 @@ function makeSession() {
   return { surface: { nodes: surface }, events }
 }
 
-function makeHarness({ totals, threshold = 262144, compactRegion, fallbackCompaction, fallbackEngine, maxCompactions }) {
+function makeHarness({ totals, threshold = 262144, compactRegion, compactNow, fallbackCompaction, fallbackEngine, maxCompactions }) {
   const calls = { compacted: [], infos: [], warns: [] }
   let index = 0
   const measurement = () => {
@@ -32,6 +32,12 @@ function makeHarness({ totals, threshold = 262144, compactRegion, fallbackCompac
       calls.compacted.push({ start, end, agent })
       index += 1
       return { shadowedSeqs: [start], shadowedTokenCount: 100 }
+    }),
+    compactNow: compactNow ?? (async (agent, signal) => {
+      calls.idleCompacted ??= []
+      calls.idleCompacted.push(agent)
+      index += 1
+      return { shadowedSeqs: [1, 3], shadowedTokenCount: 100 }
     }),
   }
   const ctx = {
@@ -56,7 +62,8 @@ function makeHarness({ totals, threshold = 262144, compactRegion, fallbackCompac
       },
     },
     on: (event, handler) => {
-      calls.handler = handler
+      calls.handlers ??= {}
+      calls.handlers[event] = handler
     },
   }
   apply(ctx, { thresholdTokens: threshold, retainTokens: 5, ...(maxCompactions === undefined ? {} : { maxCompactions }) })
@@ -79,7 +86,7 @@ async function runStep(harness, session, compaction = harness.compaction) {
 
 async function runStepAgent(harness, agent) {
   let nextCalled = false
-  await harness.calls.handler(
+  await harness.calls.handlers['agent/pre-step'](
     {
       agent,
       signal: new AbortController().signal,
@@ -178,6 +185,7 @@ test('settings namespace updates the threshold at runtime', async () => {
     },
   }
   const ctx = {
+    handlers: {},
     tokenMeter: {
       measure: () => ({
         totalTokens: 300000,
@@ -198,7 +206,7 @@ test('settings namespace updates the threshold at runtime', async () => {
           : {},
       },
     },
-    on: (_event, handler) => { ctx.handler = handler },
+    on: (event, handler) => { ctx.handlers[event] = handler },
     inject: (deps, callback) => {
       // Only the settings namespace sub-fiber is simulated here; the
       // webServer HTTP-route sub-fiber is covered by the web integration path.
@@ -219,7 +227,7 @@ test('settings namespace updates the threshold at runtime', async () => {
   })
   const run = async () => {
     let nextCalled = false
-    await ctx.handler({ agent, signal: new AbortController().signal }, () => { nextCalled = true })
+    await ctx.handlers['agent/pre-step']({ agent, signal: new AbortController().signal }, () => { nextCalled = true })
     return nextCalled
   }
 
@@ -259,4 +267,30 @@ test('apply mounts a fallback compaction engine for presets without compaction',
   assert.ok(harness.calls.imports.includes('@deepseek-ai/dsh-compaction-basic'))
   assert.equal(fallbackConstructed, 1)
   assert.equal(fallbackCalls, 1)
+})
+
+test('apply compacts an idle resumed agent that is already over threshold', async () => {
+  const session = makeSession()
+  let idleCalls = 0
+  const harness = makeHarness({
+    totals: [300000, 100000],
+    threshold: 200000,
+    compactNow: async (agent) => {
+      idleCalls += 1
+      return { shadowedSeqs: [1, 3], shadowedTokenCount: 100 }
+    },
+  })
+  const agent = makeAgent(session, harness.compaction)
+  harness.calls.handlers['agent/created']({ agent })
+  await new Promise((resolve) => setImmediate(resolve))
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(idleCalls, 1)
+
+  // Below-threshold agents are left alone.
+  const below = makeHarness({ totals: [100000], threshold: 200000 })
+  const belowAgent = makeAgent(makeSession(), below.compaction)
+  below.calls.handlers['agent/created']({ agent: belowAgent })
+  await new Promise((resolve) => setImmediate(resolve))
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(below.calls.idleCompacted, undefined)
 })

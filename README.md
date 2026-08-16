@@ -146,6 +146,9 @@ a single warning per agent. There is nothing to compact with there.
   false`, so the absolute-threshold check still works there. The preset stays
   otherwise minimal: no `/compact` command, no pruner, no built-in ratio
   pressure.
+- Idle/resume compaction (v0.2.2+): opening or resuming a conversation whose
+  context is already above the threshold compacts it through the built-in
+  `compactNow` maintenance path — no follow-up message is required.
 - Idempotent installer and uninstaller.
 
 ---
@@ -305,6 +308,12 @@ back to a surface-only token estimate for compaction decisions. The warning
 This keeps compaction working on damaged-but-usable sessions; healthy sessions
 never use the fallback.
 
+The same absolute threshold is also checked on `agent/created` while the
+agent is idle, so a resumed session that was already over the threshold is
+compacted as soon as it is opened. `compactNow` runs as an agent maintenance
+job (the same path as the built-in `/compact` command); if a turn has already
+started, the pre-step check handles it instead.
+
 ### When the check runs
 
 The check runs on the `agent/pre-step` waterfall — immediately before the model
@@ -356,6 +365,8 @@ All messages are prefixed with `dsh-auto-compact:` and use the harness logger:
 | Level | Message pattern | Meaning |
 |---|---|---|
 | `info` | `context at N tokens reached the ... threshold` | a compaction attempt starts |
+| `info` | `idle context at N tokens reached the ... threshold` | an idle/resumed session compacts without a new message |
+| `info` | `idle compaction shadowed ...` | an idle compaction completed |
 | `info` | `compacted N history items (~N tokens shadowed)` | an attempt succeeded |
 | `warn` | `no tool-pair-balanced older span is compactable` | threshold exceeded, nothing safe to compact (rate-limited per session) |
 | `warn` | `context is still at N tokens after N compaction attempt(s)` | retry cap exhausted (rate-limited per session) |
