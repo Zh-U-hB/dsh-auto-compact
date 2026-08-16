@@ -141,6 +141,11 @@ a single warning per agent. There is nothing to compact with there.
 - Tool-call/tool-result aware cuts — never splits an open tool pairing.
 - Zero runtime npm dependencies; pure ESM host plugin.
 - All compaction work executes inside the harness's built-in backend.
+- Presets without a compaction backend (for example the shipped `minimal`
+  preset) get a plugin-owned `compaction-basic` fallback engine with `auto:
+  false`, so the absolute-threshold check still works there. The preset stays
+  otherwise minimal: no `/compact` command, no pruner, no built-in ratio
+  pressure.
 - Idempotent installer and uninstaller.
 
 ---
@@ -354,7 +359,7 @@ All messages are prefixed with `dsh-auto-compact:` and use the harness logger:
 | `info` | `compacted N history items (~N tokens shadowed)` | an attempt succeeded |
 | `warn` | `no tool-pair-balanced older span is compactable` | threshold exceeded, nothing safe to compact (rate-limited per session) |
 | `warn` | `context is still at N tokens after N compaction attempt(s)` | retry cap exhausted (rate-limited per session) |
-| `warn` | `agent "..." has no ctx.compaction service` | the session's preset mounts no backend (once per agent) |
+| `warn` | `agent "..." has no ctx.compaction service and no fallback engine could be mounted` | backend unavailable; the turn continues (once per agent) |
 | `warn` | `automatic compaction failed (...)` | backend error; the turn continues |
 
 ---
@@ -455,10 +460,13 @@ the profile on disk is not hot-reloaded into a running `dsh web`.
   surface; a mostly-tool-call session can take longer to cross it than the raw
   transcript size suggests.
 
-### A preset shows "has no ctx.compaction service"
+### A preset shows "has no ctx.compaction service and no fallback engine could be mounted"
 
-That preset has no compaction backend. Either switch to a preset that includes
-one, or compose `compaction-basic`/`command-compact` into it.
+Since v0.2.1 the plugin mounts a `compaction-basic` fallback engine into
+presets that have none (including the shipped `minimal` preset). The warning
+above now only appears when that fallback could not be constructed — for
+example in a profile that also lacks `@deepseek-ai/dsh-compaction-basic` or
+`@deepseek-ai/dsh-llm` on the host plane.
 
 ### I edited `cordis.patch.yml` and nothing changed
 

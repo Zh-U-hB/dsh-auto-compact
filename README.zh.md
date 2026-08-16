@@ -131,6 +131,10 @@ ctx.compaction.compactRegion(start, end, agent, signal)
 - 感知 tool-call/tool-result 配对，绝不拆开未完成的工具调用。
 - 运行时零 npm 依赖，纯 ESM host 插件。
 - 全部压缩工作都在 Harness 内置后端中执行。
+- 对没有压缩后端的 preset（例如官方的 `minimal`）会自动挂载一个
+  `auto: false` 的 `compaction-basic` 后备引擎，因此绝对阈值检查在这些
+  preset 中同样生效；preset 其余部分仍保持极简（没有 `/compact` 命令、
+  没有 pruner、没有内置比例压力）。
 - 安装与卸载脚本幂等。
 
 ---
@@ -328,7 +332,7 @@ token 数，但有意与内置压缩后端比较的是同一个数字。
 | `info` | `compacted N history items (~N tokens shadowed)` | 尝试成功 |
 | `warn` | `no tool-pair-balanced older span is compactable` | 超阈值但没有安全区间（按会话限流） |
 | `warn` | `context is still at N tokens after N compaction attempt(s)` | 重试上限耗尽（按会话限流） |
-| `warn` | `agent "..." has no ctx.compaction service` | 该 preset 没有压缩后端（每个 agent 一次） |
+| `warn` | `agent "..." has no ctx.compaction service and no fallback engine could be mounted` | 压缩后端不可用；turn 继续（每个 agent 一次） |
 | `warn` | `automatic compaction failed (...)` | 后端错误；turn 继续 |
 
 ---
@@ -422,10 +426,12 @@ Harness 后请先重新跑测试并开一个新会话确认。
 - 记住阈值统计的是整个测量请求包络 + 表面；以工具调用为主的会话比纯文本要
   更晚到达阈值。
 
-### 出现 "has no ctx.compaction service"
+### 出现 "has no ctx.compaction service and no fallback engine could be mounted"
 
-该 preset 没有压缩后端。换一个带压缩组的 preset，或把
-`compaction-basic`/`command-compact` 组合进去。
+从 v0.2.1 起，插件会给没有压缩后端的 preset（包括官方 `minimal`）挂载
+`compaction-basic` 后备引擎。只有后备引擎也无法构造时才会出现上面这条
+警告，例如 host plane 同时缺少 `@deepseek-ai/dsh-compaction-basic` 或
+`@deepseek-ai/dsh-llm`。
 
 ### 改了 `cordis.patch.yml` 没变化
 

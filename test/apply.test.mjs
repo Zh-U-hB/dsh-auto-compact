@@ -12,7 +12,7 @@ function makeSession() {
   return { surface: { nodes: surface }, events }
 }
 
-function makeHarness({ totals, threshold = 262144, compactRegion, fallbackCompaction, maxCompactions }) {
+function makeHarness({ totals, threshold = 262144, compactRegion, fallbackCompaction, fallbackEngine, maxCompactions }) {
   const calls = { compacted: [], infos: [], warns: [] }
   let index = 0
   const measurement = () => {
@@ -46,6 +46,9 @@ function makeHarness({ totals, threshold = 262144, compactRegion, fallbackCompac
         import: async (specifier) => {
           calls.imports ??= []
           calls.imports.push(specifier)
+          if (specifier === '@deepseek-ai/dsh-compaction-basic' && fallbackEngine !== undefined) {
+            return { BasicCompactionEngine: fallbackEngine }
+          }
           return fallbackCompaction === undefined
             ? {}
             : { serviceForAgent: () => fallbackCompaction }
@@ -226,4 +229,34 @@ test('settings namespace updates the threshold at runtime', async () => {
   scope.setThreshold(400000)
   assert.equal(await run(), true)
   assert.equal(compacted.length, 3, 'raising the threshold through settings must stop compaction')
+})
+
+test('apply mounts a fallback compaction engine for presets without compaction', async () => {
+  const session = makeSession()
+  let fallbackCalls = 0
+  let fallbackConstructed = 0
+  class FallbackCompactionEngine {
+    constructor(agentCtx, config) {
+      fallbackConstructed += 1
+      assert.equal(config.auto, false)
+      assert.equal(typeof agentCtx?.get, 'function')
+    }
+
+    compactRegion = async (start, end) => {
+      fallbackCalls += 1
+      return { shadowedSeqs: [start, end], shadowedTokenCount: 100 }
+    }
+  }
+  const harness = makeHarness({
+    totals: [300000, 100000],
+    threshold: 200000,
+    fallbackEngine: FallbackCompactionEngine,
+    maxCompactions: 1,
+  })
+  const agent = makeAgent(session, null)
+  await runStepAgent(harness, agent)
+  assert.ok(harness.calls.imports.includes('@deepseek-ai/dsh-agent-presets'))
+  assert.ok(harness.calls.imports.includes('@deepseek-ai/dsh-compaction-basic'))
+  assert.equal(fallbackConstructed, 1)
+  assert.equal(fallbackCalls, 1)
 })
