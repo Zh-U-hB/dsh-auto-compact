@@ -1,15 +1,17 @@
 {
   "name": "dsh-auto-compact",
   "description": "DeepSeek Harness plugin: automatically invoke the built-in compaction engine when a session's measured context reaches a configurable absolute token threshold (default 256K)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
+    "lib/client.js",
     "cordis.patch.yml",
     "scripts/manage-presets.mjs",
     "README.md",
@@ -21,14 +23,21 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings-plugins",
+        "@deepseek-ai/dsh-client-locale"
+      ]
     }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
   },
   "scripts": {
-    "test": "node --test test/unit.test.mjs test/apply.test.mjs",
-    "check": "node --check lib/index.js && node --check scripts/manage-presets.mjs && npm test"
+    "test": "node --test test/unit.test.mjs test/apply.test.mjs test/client.test.mjs",
+    "check": "node --check lib/index.js && node --check lib/client.js && node --check scripts/manage-presets.mjs && npm test"
   },
   "engines": {
     "node": ">=20"

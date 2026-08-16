@@ -206,6 +206,19 @@ DSH_PROFILE=tui ./install.sh        # 或任意其它 profile 名
 
 ---
 
+### 在 Web 设置界面里手动设置阈值（v0.2.0+）
+
+打开界面左下角设置，进入 **Plugins → Configurable**，使用 **Auto Compact**
+卡片即可手动修改压缩阈值。输入框支持纯数字（`262144`）或人类可读单位
+（`256k`、`1m`，按 1024 换算）。保存后通过平台的 settings 服务写入 profile 的
+`settings.yaml`，重启后仍然生效，并优先于下面的行配置；点击 **Discard** 可恢复
+为行配置（没有行配置时回到 256K 默认值）。
+
+设置卡片作为插件的 client bundle 随包加载，因此从旧版本升级后需要重启一次
+`dsh web`。
+
+下面的行级配置仍是基础/默认层：
+
 ## 配置
 
 编辑 profile 自己的 patch 层：
@@ -363,17 +376,19 @@ npm run check   # 语法检查插件与脚本，然后跑测试
 ```text
 dsh-auto-compact/
 ├── lib/
-│   └── index.js              # 完整 host 插件（零运行时依赖）
+│   ├── index.js              # host 插件：阈值执行 + settings 命名空间
+│   └── client.js             # Web 设置卡片（Plugins → Configurable）
 ├── scripts/
 │   └── manage-presets.mjs    # 旧版 preset 行清理工具
 ├── test/
 │   ├── unit.test.mjs         # 配置 + 区间选择单元测试
-│   ├── apply.test.mjs        # apply() 集成风格测试
+│   ├── apply.test.mjs        # apply() + settings 集成测试
+│   ├── client.test.mjs       # client bundle 注册冒烟测试
 │   └── mount-smoke.mjs       # headless preset 挂载冒烟测试
 ├── cordis.patch.yml          # bundle patch：插入 auto-compact 行
 ├── install.sh                # dsh plugin add 包装脚本
 ├── uninstall.sh              # dsh plugin remove 包装脚本
-├── package.json              # 包与 dsh.bundle.patch 元数据
+├── package.json              # 包与 dsh.bundle.patch + dsh.client 元数据
 └── README.md / README.zh.md
 ```
 

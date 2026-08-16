@@ -218,6 +218,20 @@ plane (the standard `dsh-base` composition does).
 
 ---
 
+### Set the threshold in the web settings UI (v0.2.0+)
+
+Open the harness settings gear, choose **Plugins → Configurable**, and use the
+**Auto Compact** card. The input accepts a plain token count (`262144`) or a
+human-unit value (`256k`, `1m`; 1024-based). Saving writes the value through
+the platform settings service into the profile's `settings.yaml`, so it
+survives restarts and wins over the row config below. **Discard** resets the
+field back to the row config (or the 256K default).
+
+The settings card itself is loaded as part of the plugin's client bundle, so
+after upgrading from an earlier version, restart `dsh web` once.
+
+The row-level configuration below remains the base/default layer:
+
 ## Configuration
 
 Edit the profile's own patch layer:
@@ -377,7 +391,9 @@ Test coverage:
 - balanced-cut folding around open tool pairings;
 - surface-span selection against token-meter measurements;
 - `apply()` behavior: threshold reached, below threshold, backend throwing,
-  missing backend (warning once per agent).
+  missing backend (warning once per agent);
+- the settings namespace updating the runtime threshold;
+- the client settings-card bundle registration.
 
 A `test/mount-smoke.mjs` helper is included for one-shot headless checks that a
 preset composition mounts and exposes `ctx.compaction` without making any model
@@ -390,17 +406,19 @@ request.
 ```text
 dsh-auto-compact/
 ├── lib/
-│   └── index.js              # the entire host plugin (zero runtime imports)
+│   ├── index.js              # host plugin: threshold enforcement + settings namespace
+│   └── client.js             # web settings card (Plugins → Configurable)
 ├── scripts/
 │   └── manage-presets.mjs    # legacy preset-row cleanup helper
 ├── test/
 │   ├── unit.test.mjs         # config + range-selection unit tests
-│   ├── apply.test.mjs        # apply() integration-style tests
+│   ├── apply.test.mjs        # apply() + settings integration tests
+│   ├── client.test.mjs       # client bundle registration smoke test
 │   └── mount-smoke.mjs       # headless preset-mount smoke helper
 ├── cordis.patch.yml          # bundle patch: inserts the auto-compact row
 ├── install.sh                # dsh plugin add wrapper
 ├── uninstall.sh              # dsh plugin remove wrapper
-├── package.json              # package + dsh.bundle.patch metadata
+├── package.json              # package + dsh.bundle.patch + dsh.client metadata
 └── README.md / README.zh.md
 ```
 

@@ -153,3 +153,77 @@ test('apply resolves preset-isolated compaction through serviceForAgent fallback
   assert.equal(fallbackCalls, 1)
   assert.equal(harness.calls.warns.length, 1) // still-above warning after maxCompactions=1
 })
+
+test('settings namespace updates the threshold at runtime', async () => {
+  const fakeZ = {
+    object: (fields) => ({ fields }),
+    union: (members) => ({ members, default: (value) => ({ members, defaultValue: value }) }),
+    number: () => ({ step: () => ({ min: () => ({ kind: 'number' }) }) }),
+    string: () => ({ min: () => ({ kind: 'string' }) }),
+  }
+  let scope
+  const settings = {
+    register(_namespace, schema, options) {
+      let value = options.base.thresholdTokens ?? schema.fields.thresholdTokens.defaultValue
+      let watcher
+      scope = {
+        get: () => ({ thresholdTokens: value }),
+        watch: (callback) => { watcher = callback },
+        setThreshold(next) { value = next; watcher() },
+      }
+      return scope
+    },
+  }
+  const ctx = {
+    tokenMeter: {
+      measure: () => ({
+        totalTokens: 300000,
+        nodes: [
+          { seq: 1, tokens: 10 },
+          { seq: 2, tokens: 10 },
+          { seq: 3, tokens: 10 },
+          { seq: 4, tokens: 10 },
+        ],
+      }),
+    },
+    logger: { info: () => {}, warn: () => {} },
+    baseUrl: 'file:///test/',
+    loader: {
+      internal: {
+        import: async (specifier) => specifier === '@deepseek-ai/schemastery'
+          ? { default: fakeZ }
+          : {},
+      },
+    },
+    on: (_event, handler) => { ctx.handler = handler },
+    inject: (deps, callback) => {
+      // Only the settings namespace sub-fiber is simulated here; the
+      // webServer HTTP-route sub-fiber is covered by the web integration path.
+      if (deps.includes('settings') && !deps.includes('webServer')) callback({ settings })
+    },
+  }
+  apply(ctx, { thresholdTokens: 262144, retainTokens: 5, maxCompactions: 3 })
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.ok(scope)
+
+  const session = makeSession()
+  const compacted = []
+  const agent = makeAgent(session, {
+    compactRegion: async (start, end) => {
+      compacted.push({ start, end })
+      return { shadowedSeqs: [start, end], shadowedTokenCount: 10 }
+    },
+  })
+  const run = async () => {
+    let nextCalled = false
+    await ctx.handler({ agent, signal: new AbortController().signal }, () => { nextCalled = true })
+    return nextCalled
+  }
+
+  assert.equal(await run(), true)
+  assert.equal(compacted.length, 3)
+
+  scope.setThreshold(400000)
+  assert.equal(await run(), true)
+  assert.equal(compacted.length, 3, 'raising the threshold through settings must stop compaction')
+})
