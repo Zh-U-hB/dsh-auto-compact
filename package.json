@@ -1,7 +1,7 @@
 {
   "name": "dsh-auto-compact",
   "description": "DeepSeek Harness plugin: automatically invoke the built-in compaction engine when a session's measured context reaches a configurable absolute token threshold (default 256K)",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
